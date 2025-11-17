@@ -1,0 +1,91 @@
+name: Validate Part 2
+
+on:
+  push:
+    branches:
+      - 'submissions/part2'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make valgrind
+        
+    - name: Run Part 2 Tests
+      id: tests
+      continue-on-error: true
+      run: |
+        make clean
+        make test-part2
+        ./test_part2
+        
+    - name: Check memory leaks
+      id: valgrind
+      continue-on-error: true
+      run: |
+        valgrind --leak-check=full --error-exitcode=1 ./test_part2
+        
+    - name: Create test summary
+      if: always()
+      run: |
+        echo "# 📊 Résultats Part 2" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.tests.outcome }}" == "success" ]; then
+          echo "✅ **Tests unitaires** : PASS" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Tests unitaires** : FAIL" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        if [ "${{ steps.valgrind.outcome }}" == "success" ]; then
+          echo "✅ **Vérification mémoire** : PASS" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️  **Vérification mémoire** : FAIL ou non exécuté" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        
+        # Prochaines étapes
+        if [ "${{ steps.tests.outcome }}" == "success" ] && [ "${{ steps.valgrind.outcome }}" == "success" ]; then
+          echo "## ✅ Validation réussie" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🎉 Tous les tests de la Partie 2 sont validés !" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Consultez le README pour les instructions de la suite du projet." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## ⚠️ Corrections nécessaires" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Pour corriger :**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Testez localement : \`./test-local.sh 2\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Corrigez votre code" >> $GITHUB_STEP_SUMMARY
+          echo "3. Sauvegardez : \`./save.sh\`" >> $GITHUB_STEP_SUMMARY
+          echo "4. Resoumettez : \`./submit.sh 2\`" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "📅 Soumis le : $(date)" >> $GITHUB_STEP_SUMMARY
+        
+    - name: Upload test artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: part2-test-results
+        path: |
+          test_part2
+          
+    - name: Final status
+      if: steps.tests.outcome != 'success'
+      run: exit 1

@@ -1,0 +1,54 @@
+# Exécutables
+main
+test_part*
+*.out
+
+# Fichiers objets
+*.o
+*.a
+*.so
+obj/
+
+# Fichiers de build
+*.d
+*.dSYM/
+build/
+cmake-build-*/
+
+# Fichiers Valgrind
+vgcore.*
+*.log
+
+# Fichiers temporaires
+*~
+*.swp
+*.swo
+.DS_Store
+
+# Fichiers IDE
+.vscode/
+.idea/
+*.iml
+.clangd/
+compile_commands.json
+
+# Fichiers de sortie
+output/*.txt
+!output/.gitkeep
+
+# Fichiers de debug
+*.core
+core
+
+# Dossier des solutions (ne pas partager avec les étudiants)
+solutions/
+
+# Fichiers enseignants (ne pas partager avec les étudiants)
+TEACHER_GUIDE.md
+verify-template.sh
+collect-grades.py
+requirements.txt
+GRADING_README.md
+.github/CODEOWNERS
+.github/README.md
+grading/

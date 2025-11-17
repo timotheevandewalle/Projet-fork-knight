@@ -1,0 +1,550 @@
+name: Validate Part 1 Submission
+
+on:
+  push:
+    branches:
+      - 'submissions/part1'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate-part1:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 🔧 Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make valgrind
+    
+    - name: 📋 Environment info
+      run: |
+        echo "## 🎯 Validation - Partie 1" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Étudiant:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+    
+    - name: 🔨 Compile tests
+      id: compile
+      run: |
+        echo "🔨 Compilation des tests Part 1..."
+        make test-part1 2>&1 | tee compile.log
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+          echo "✅ Compilation réussie"
+          echo "compile_success=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Erreurs de compilation"
+          echo "compile_success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+    
+    - name: 🧪 Run tests - player.c
+      id: test_player
+      if: steps.compile.outputs.compile_success == 'true'
+      continue-on-error: true
+      run: |
+        echo "🧪 Tests module player.c"
+        ./test_part1_player > test_player.log 2>&1
+        TEST_EXIT=$?
+        cat test_player.log
+        
+        # Parser les résultats Unity (utiliser $NF pour capturer le dernier champ)
+        TESTS_RUN=$(grep "Tests Run:" test_player.log | awk '{print $NF}')
+        TESTS_PASSED=$(grep "Passed:" test_player.log | awk '{print $NF}')
+        TESTS_FAILED=$(grep "Failed:" test_player.log | awk '{print $NF}')
+        
+        echo "tests_run=${TESTS_RUN:-0}" >> $GITHUB_OUTPUT
+        echo "tests_passed=${TESTS_PASSED:-0}" >> $GITHUB_OUTPUT
+        echo "tests_failed=${TESTS_FAILED:-0}" >> $GITHUB_OUTPUT
+        
+        if [ $TEST_EXIT -eq 0 ]; then
+          echo "status=✅ PASS" >> $GITHUB_OUTPUT
+          echo "exit_code=0" >> $GITHUB_OUTPUT
+        else
+          echo "status=❌ FAIL" >> $GITHUB_OUTPUT
+          echo "exit_code=1" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: 🧪 Run tests - array-utils.c
+      id: test_array
+      if: steps.compile.outputs.compile_success == 'true'
+      continue-on-error: true
+      run: |
+        echo "🧪 Tests module array-utils.c"
+        ./test_part1_array > test_array.log 2>&1
+        TEST_EXIT=$?
+        cat test_array.log
+        
+        # Parser les résultats Unity (utiliser $NF pour capturer le dernier champ)
+        TESTS_RUN=$(grep "Tests Run:" test_array.log | awk '{print $NF}')
+        TESTS_PASSED=$(grep "Passed:" test_array.log | awk '{print $NF}')
+        TESTS_FAILED=$(grep "Failed:" test_array.log | awk '{print $NF}')
+        
+        echo "tests_run=${TESTS_RUN:-0}" >> $GITHUB_OUTPUT
+        echo "tests_passed=${TESTS_PASSED:-0}" >> $GITHUB_OUTPUT
+        echo "tests_failed=${TESTS_FAILED:-0}" >> $GITHUB_OUTPUT
+        
+        if [ $TEST_EXIT -eq 0 ]; then
+          echo "status=✅ PASS" >> $GITHUB_OUTPUT
+          echo "exit_code=0" >> $GITHUB_OUTPUT
+        else
+          echo "status=❌ FAIL" >> $GITHUB_OUTPUT
+          echo "exit_code=1" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: 🔍 Memory check - Valgrind
+      id: valgrind
+      if: steps.compile.outputs.compile_success == 'true'
+      continue-on-error: true
+      run: |
+        echo "🔍 Vérification mémoire avec Valgrind..."
+        
+        # Test player.c
+        echo "Test player.c:"
+        valgrind --leak-check=full --errors-for-leak-kinds=all \
+                 --show-leak-kinds=all ./test_part1_player > valgrind_player.log 2>&1
+        
+        # Test array-utils.c
+        echo "Test array-utils.c:"
+        valgrind --leak-check=full --errors-for-leak-kinds=all \
+                 --show-leak-kinds=all ./test_part1_array > valgrind_array.log 2>&1
+        
+        # Vérifier les fuites en parsant la sortie (pas le exit code du programme)
+        # On récupère le nombre d'octets "definitely lost" (dernier résumé Valgrind)
+        PLAYER_LEAKS=$(grep -m1 "definitely lost:" valgrind_player.log | sed -E 's/.*definitely lost:[[:space:]]+([0-9,]+) bytes.*/\1/' | tr -d ',')
+        ARRAY_LEAKS=$(grep -m1 "definitely lost:" valgrind_array.log | sed -E 's/.*definitely lost:[[:space:]]+([0-9,]+) bytes.*/\1/' | tr -d ',')
+        
+        PLAYER_LEAKS=${PLAYER_LEAKS:-0}
+        ARRAY_LEAKS=${ARRAY_LEAKS:-0}
+        
+        echo "Player leaks: $PLAYER_LEAKS bytes"
+        echo "Array leaks: $ARRAY_LEAKS bytes"
+        
+        # Toujours (ré)initialiser le résumé Valgrind
+        : > valgrind_summary.txt
+
+        # Si des logs sont manquants/vides, on considère cela comme un échec et on l'explique
+        if [ ! -s valgrind_player.log ] || [ ! -s valgrind_array.log ]; then
+          echo "Logs Valgrind manquants ou vides." >> valgrind_summary.txt
+          echo "status=⚠️ Logs manquants" >> $GITHUB_OUTPUT
+          echo "exit_code=1" >> $GITHUB_OUTPUT
+        else
+          if [ "$PLAYER_LEAKS" = "0" ] && [ "$ARRAY_LEAKS" = "0" ]; then
+            echo "Aucune fuite détectée ✅" >> valgrind_summary.txt
+            echo "status=✅ OK" >> $GITHUB_OUTPUT
+            echo "exit_code=0" >> $GITHUB_OUTPUT
+          else
+            {
+              echo "Détails des fuites:"
+              echo "Player leaks: $PLAYER_LEAKS bytes"
+              echo "Array leaks: $ARRAY_LEAKS bytes"
+              echo ""
+              echo "---- Résumés Valgrind ----"
+              grep -A 10 "LEAK SUMMARY" valgrind_player.log || true
+              grep -A 10 "LEAK SUMMARY" valgrind_array.log || true
+            } >> valgrind_summary.txt
+            echo "status=❌ Fuites détectées" >> $GITHUB_OUTPUT
+            echo "exit_code=1" >> $GITHUB_OUTPUT
+          fi
+        fi
+    
+    - name: 🎯 Calculate score
+      id: score
+      if: always()
+      run: |
+        # Récupérer les résultats des tests
+        PLAYER_RUN=${{ steps.test_player.outputs.tests_run }}
+        PLAYER_PASSED=${{ steps.test_player.outputs.tests_passed }}
+        ARRAY_RUN=${{ steps.test_array.outputs.tests_run }}
+        ARRAY_PASSED=${{ steps.test_array.outputs.tests_passed }}
+        VALGRIND_OK=${{ steps.valgrind.outputs.exit_code }}
+
+        # Fallback Valgrind: always re-parse logs to check actual leaks
+        # (step exit_code may be 1 due to test failures, not memory leaks)
+        if [ -s valgrind_player.log ] && [ -s valgrind_array.log ]; then
+          PL=$(grep -m1 "definitely lost:" valgrind_player.log | sed -E 's/.*definitely lost:[[:space:]]+([0-9,]+) bytes.*/\1/' | tr -d ',')
+          AL=$(grep -m1 "definitely lost:" valgrind_array.log | sed -E 's/.*definitely lost:[[:space:]]+([0-9,]+) bytes.*/\1/' | tr -d ',')
+          PL=${PL:-0}
+          AL=${AL:-0}
+            echo "DEBUG: Parsed leaks - Player: $PL bytes, Array: $AL bytes"
+          if [ "$PL" = "0" ] && [ "$AL" = "0" ]; then
+            VALGRIND_OK=0
+              echo "DEBUG: No leaks detected, setting VALGRIND_OK=0"
+          else
+            VALGRIND_OK=1
+              echo "DEBUG: Leaks detected, setting VALGRIND_OK=1"
+          fi
+          else
+            echo "DEBUG: Valgrind logs not found or empty"
+            if [ ! -s valgrind_player.log ]; then
+              echo "DEBUG: valgrind_player.log missing or empty"
+            fi
+            if [ ! -s valgrind_array.log ]; then
+              echo "DEBUG: valgrind_array.log missing or empty"
+            fi
+        fi
+
+        # Valeurs par défaut si non définies
+        PLAYER_RUN=${PLAYER_RUN:-0}
+        PLAYER_PASSED=${PLAYER_PASSED:-0}
+        ARRAY_RUN=${ARRAY_RUN:-0}
+        ARRAY_PASSED=${ARRAY_PASSED:-0}
+        VALGRIND_OK=${VALGRIND_OK:-1}
+
+        # Fallback robuste: si une des valeurs est 0 alors que le log existe,
+        # reparser directement les logs Unity (évite les sorties vides)
+        if [ "$PLAYER_RUN" = "0" ] && [ -s test_player.log ]; then
+          PLAYER_RUN=$(grep "Tests Run:" test_player.log | awk '{print $NF}')
+          PLAYER_PASSED=$(grep "Passed:" test_player.log | awk '{print $NF}')
+          PLAYER_RUN=${PLAYER_RUN:-0}
+          PLAYER_PASSED=${PLAYER_PASSED:-0}
+        fi
+        if [ "$ARRAY_RUN" = "0" ] && [ -s test_array.log ]; then
+          ARRAY_RUN=$(grep "Tests Run:" test_array.log | awk '{print $NF}')
+          ARRAY_PASSED=$(grep "Passed:" test_array.log | awk '{print $NF}')
+          ARRAY_RUN=${ARRAY_RUN:-0}
+          ARRAY_PASSED=${ARRAY_PASSED:-0}
+        fi
+        
+        # Total des tests
+        TOTAL_TESTS=$((PLAYER_RUN + ARRAY_RUN))
+        TOTAL_PASSED=$((PLAYER_PASSED + ARRAY_PASSED))
+        
+        echo "Total tests: $TOTAL_TESTS"
+        echo "Total passed: $TOTAL_PASSED"
+        
+        # Calcul du score sur 15 points
+        if [ $TOTAL_TESTS -gt 0 ]; then
+          # 13 points pour les tests (proportionnel)
+          TESTS_SCORE=$(echo "scale=2; 13 * $TOTAL_PASSED / $TOTAL_TESTS" | bc)
+          
+          # 2 points pour Valgrind (bonus si pas de fuites)
+            echo "DEBUG: VALGRIND_OK value before score calc: '$VALGRIND_OK'"
+          if [ "$VALGRIND_OK" = "0" ]; then
+            VALGRIND_SCORE=2
+              echo "DEBUG: VALGRIND_OK=0, setting VALGRIND_SCORE=2"
+          else
+            VALGRIND_SCORE=0
+              echo "DEBUG: VALGRIND_OK≠0 (value: $VALGRIND_OK), setting VALGRIND_SCORE=0"
+          fi
+          
+          # Score total
+          TOTAL_SCORE=$(echo "scale=2; $TESTS_SCORE + $VALGRIND_SCORE" | bc)
+        else
+          TOTAL_SCORE=0
+        fi
+        
+        echo "score=$TOTAL_SCORE" >> $GITHUB_OUTPUT
+        echo "total_tests=$TOTAL_TESTS" >> $GITHUB_OUTPUT
+        echo "total_passed=$TOTAL_PASSED" >> $GITHUB_OUTPUT
+        echo "tests_score=$TESTS_SCORE" >> $GITHUB_OUTPUT
+        echo "valgrind_score=$VALGRIND_SCORE" >> $GITHUB_OUTPUT
+    
+    - name: 📊 Generate detailed report
+      if: always()
+      run: |
+        echo "# 📋 Rapport de Soumission - Partie 1" > report.md
+        echo "" >> report.md
+        echo "**Étudiant:** ${{ github.actor }}" >> report.md
+        echo "**Date:** $(date '+%d %B %Y %H:%M:%S')" >> report.md
+        echo "**Commit:** \`${{ github.sha }}\`" >> report.md
+        echo "**Branche:** \`submissions/part1\`" >> report.md
+        echo "" >> report.md
+        echo "---" >> report.md
+        echo "" >> report.md
+        
+        # Résultat global
+        echo "## 🎯 Résultat Global" >> report.md
+        echo "" >> report.md
+        
+        COMPILE="${{ steps.compile.outputs.compile_success }}"
+        TOTAL_SCORE="${{ steps.score.outputs.score }}"
+        TOTAL_TESTS="${{ steps.score.outputs.total_tests }}"
+        TOTAL_PASSED="${{ steps.score.outputs.total_passed }}"
+        TESTS_SCORE="${{ steps.score.outputs.tests_score }}"
+        VALGRIND_SCORE="${{ steps.score.outputs.valgrind_score }}"
+        PLAYER_STATUS="${{ steps.test_player.outputs.exit_code }}"
+        ARRAY_STATUS="${{ steps.test_array.outputs.exit_code }}"
+        # Use VALGRIND_SCORE (0 or 2) to determine if there are leaks, not exit_code
+        VALGRIND_HAS_LEAKS=$([ "$VALGRIND_SCORE" = "0" ] && echo "1" || echo "0")
+        
+        if [ "$COMPILE" != "true" ]; then
+          echo "**Statut:** ❌ ÉCHEC COMPILATION" >> report.md
+          echo "**Score:** 0/15 points" >> report.md
+          echo "" >> report.md
+          echo "Votre code ne compile pas. Consultez les logs ci-dessous." >> report.md
+        else
+          # Afficher le score
+          echo "**Score:** 🎯 **${TOTAL_SCORE}/15 points**" >> report.md
+          echo "" >> report.md
+          echo "**Détail du score :**" >> report.md
+          echo "- Tests unitaires : ${TESTS_SCORE}/13 points (${TOTAL_PASSED}/${TOTAL_TESTS} tests passés)" >> report.md
+          echo "- Gestion mémoire : ${VALGRIND_SCORE}/2 points" >> report.md
+          echo "" >> report.md
+          
+          # Statut en fonction du score
+          SCORE_NUM=$(echo "$TOTAL_SCORE" | cut -d. -f1)
+          if [ "$SCORE_NUM" -ge 15 ]; then
+            echo "**Statut:** ✅ PARFAIT !" >> report.md
+            echo "" >> report.md
+            echo "🎉 **Félicitations !** Tous les tests sont passés sans erreur." >> report.md
+          elif [ "$SCORE_NUM" -ge 10 ]; then
+            echo "**Statut:** ✅ VALIDÉ" >> report.md
+            echo "" >> report.md
+            echo "👍 Bon travail ! Quelques points d'amélioration possibles." >> report.md
+          elif [ "$SCORE_NUM" -ge 5 ]; then
+            echo "**Statut:** ⚠️ PARTIELLEMENT VALIDÉ" >> report.md
+            echo "" >> report.md
+            echo "📚 Continuez vos efforts, vous êtes sur la bonne voie." >> report.md
+          else
+            echo "**Statut:** ❌ NON VALIDÉ" >> report.md
+            echo "" >> report.md
+            echo "💪 Ne vous découragez pas ! Consultez les recommandations ci-dessous." >> report.md
+          fi
+        fi
+        
+        echo "" >> report.md
+        echo "---" >> report.md
+        echo "" >> report.md
+        
+        # Détails des tests
+        echo "## 🧪 Détail des Tests" >> report.md
+        echo "" >> report.md
+        echo "| Module | Tests | Statut | Détails |" >> report.md
+        echo "|--------|-------|--------|---------|" >> report.md
+        
+        PLAYER_RUN="${{ steps.test_player.outputs.tests_run }}"
+        PLAYER_PASSED="${{ steps.test_player.outputs.tests_passed }}"
+        ARRAY_RUN="${{ steps.test_array.outputs.tests_run }}"
+        ARRAY_PASSED="${{ steps.test_array.outputs.tests_passed }}"
+        
+        # Fallback: si des totaux sont vides, relire depuis les logs
+        if [ -z "$PLAYER_RUN" ] || [ "$PLAYER_RUN" = "0" ]; then
+          PR=$(grep "Tests Run:" test_player.log | awk '{print $NF}')
+          PP=$(grep "Passed:" test_player.log | awk '{print $NF}')
+          PLAYER_RUN=${PR:-${PLAYER_RUN:-0}}
+          PLAYER_PASSED=${PP:-${PLAYER_PASSED:-0}}
+        fi
+        if [ -z "$ARRAY_RUN" ] || [ "$ARRAY_RUN" = "0" ]; then
+          AR=$(grep "Tests Run:" test_array.log | awk '{print $NF}')
+          AP=$(grep "Passed:" test_array.log | awk '{print $NF}')
+          ARRAY_RUN=${AR:-${ARRAY_RUN:-0}}
+          ARRAY_PASSED=${AP:-${ARRAY_PASSED:-0}}
+        fi
+        
+        echo "| \`player.c\` | ${PLAYER_PASSED:-0}/${PLAYER_RUN:-0} | ${{ steps.test_player.outputs.status }} | [Voir logs](#logs-player) |" >> report.md
+        echo "| \`array-utils.c\` | ${ARRAY_PASSED:-0}/${ARRAY_RUN:-0} | ${{ steps.test_array.outputs.status }} | [Voir logs](#logs-array) |" >> report.md
+        echo "| Mémoire (Valgrind) | - | ${{ steps.valgrind.outputs.status }} | [Voir logs](#logs-valgrind) |" >> report.md
+        echo "" >> report.md
+        
+        # Analyse pédagogique
+        if [ "$PLAYER_STATUS" != "0" ] || [ "$ARRAY_STATUS" != "0" ]; then
+          echo "## 💡 Analyse et Recommandations" >> report.md
+          echo "" >> report.md
+          
+          if [ "$PLAYER_STATUS" != "0" ]; then
+            echo "### ⚠️ Module \`player.c\`" >> report.md
+            echo "" >> report.md
+            echo "Certains tests ont échoué dans ce module. Voici quelques pistes :" >> report.md
+            echo "" >> report.md
+            echo "**Vérifications à faire :**" >> report.md
+            echo "1. 🤔 La fonction \`createPlayer()\` vérifie-t-elle que \`username\` n'est pas NULL ?" >> report.md
+            echo "2. 🤔 Tous les champs sont-ils initialisés correctement ?" >> report.md
+            echo "3. 🤔 La mémoire est-elle allouée avec \`malloc()\` et vérifiée ?" >> report.md
+            echo "" >> report.md
+            echo "**Consultez les logs détaillés ci-dessous pour identifier les tests qui échouent.**" >> report.md
+            echo "" >> report.md
+          fi
+          
+          if [ "$ARRAY_STATUS" != "0" ]; then
+            echo "### ⚠️ Module \`array-utils.c\`" >> report.md
+            echo "" >> report.md
+            echo "Certains tests ont échoué dans ce module. Voici quelques pistes :" >> report.md
+            echo "" >> report.md
+            echo "**Vérifications à faire :**" >> report.md
+            echo "1. 🤔 La fonction \`removePlayer()\` décale-t-elle correctement les éléments après suppression ?" >> report.md
+            echo "2. 🤔 La fonction \`sortPlayersBySpicyIndex()\` trie-t-elle par ordre **décroissant** (Spicy Index) ?" >> report.md
+            echo "3. 🤔 Les fonctions vérifient-elles les cas limites (tableau vide, NULL, etc.) ?" >> report.md
+            echo "" >> report.md
+            echo "**Consultez les logs détaillés ci-dessous pour identifier les tests qui échouent.**" >> report.md
+            echo "" >> report.md
+          fi
+          
+          echo "### 📚 Ressources recommandées" >> report.md
+          echo "" >> report.md
+          echo "- 📖 Relisez les spécifications de la Partie 1" >> report.md
+          echo "- 🎥 Consultez le cours sur les pointeurs et l'allocation mémoire" >> report.md
+          echo "- 💬 **Discutez-en avec l'enseignant** si vous êtes bloqué" >> report.md
+          echo "" >> report.md
+        fi
+        
+        if [ "$VALGRIND_HAS_LEAKS" = "1" ]; then
+          echo "### 🔍 Fuites mémoire détectées" >> report.md
+          echo "" >> report.md
+          echo "Valgrind a détecté des fuites mémoire dans votre code." >> report.md
+          echo "" >> report.md
+          echo "**Questions à se poser :**" >> report.md
+          echo "1. 🤔 Chaque \`malloc()\` a-t-il un \`free()\` correspondant ?" >> report.md
+          echo "2. 🤔 Les joueurs sont-ils bien libérés avec \`destroyPlayer()\` ?" >> report.md
+          echo "3. 🤔 Y a-t-il des retours prématurés de fonction sans libération ?" >> report.md
+          echo "" >> report.md
+          echo "**Consultez les logs Valgrind ci-dessous pour les détails.**" >> report.md
+          echo "" >> report.md
+        fi
+        
+        # Prochaines étapes
+        echo "## 🔄 Prochaines Étapes" >> report.md
+        echo "" >> report.md
+        
+        if [ "$PLAYER_STATUS" = "0" ] && [ "$ARRAY_STATUS" = "0" ] && [ "$VALGRIND_HAS_LEAKS" = "0" ]; then
+          echo "### ✅ Vous pouvez continuer !" >> report.md
+          echo "" >> report.md
+          echo "🎉 Tous les tests sont validés. Vous pouvez passer à la **Partie 2**." >> report.md
+          echo "" >> report.md
+          echo "Consultez le README pour les instructions de la Partie 2." >> report.md
+        else
+          echo "### ⚠️ Corrections nécessaires" >> report.md
+          echo "" >> report.md
+          echo "Nous vous recommandons de corriger les erreurs avant de continuer." >> report.md
+          echo "" >> report.md
+          echo "**Plan d'action :**" >> report.md
+          echo "" >> report.md
+          echo "1. **Analyser les logs** ci-dessous pour identifier les problèmes" >> report.md
+          echo "2. **Corriger le code** (fichiers \`src/player.c\` et \`src/array-utils.c\`)" >> report.md
+          echo "3. **Tester localement** avec le script fourni :" >> report.md
+          echo "" >> report.md
+          echo "\`\`\`bash" >> report.md
+          echo "./test-local.sh 1" >> report.md
+          echo "\`\`\`" >> report.md
+          echo "" >> report.md
+          echo "4. **Sauvegarder vos modifications** :" >> report.md
+          echo "" >> report.md
+          echo "\`\`\`bash" >> report.md
+          echo "./save.sh" >> report.md
+          echo "\`\`\`" >> report.md
+          echo "" >> report.md
+          echo "5. **Resoummettre** :" >> report.md
+          echo "" >> report.md
+          echo "\`\`\`bash" >> report.md
+          echo "./submit.sh 1" >> report.md
+          echo "\`\`\`" >> report.md
+        fi
+        
+        echo "" >> report.md
+        echo "---" >> report.md
+        echo "" >> report.md
+        
+        # Logs
+        echo "## 📝 Logs Détaillés" >> report.md
+        echo "" >> report.md
+        
+        echo "<a name=\"logs-player\"></a>" >> report.md
+        echo "### Tests player.c" >> report.md
+        echo "" >> report.md
+        echo "\`\`\`" >> report.md
+        cat test_player.log >> report.md 2>/dev/null || echo "Aucun log disponible" >> report.md
+        echo "\`\`\`" >> report.md
+        echo "" >> report.md
+        
+        echo "<a name=\"logs-array\"></a>" >> report.md
+        echo "### Tests array-utils.c" >> report.md
+        echo "" >> report.md
+        echo "\`\`\`" >> report.md
+        cat test_array.log >> report.md 2>/dev/null || echo "Aucun log disponible" >> report.md
+        echo "\`\`\`" >> report.md
+        echo "" >> report.md
+        
+        echo "<a name=\"logs-valgrind\"></a>" >> report.md
+        echo "### Valgrind - Mémoire" >> report.md
+        echo "" >> report.md
+        echo "\`\`\`" >> report.md
+        if [ -s valgrind_summary.txt ]; then
+          cat valgrind_summary.txt >> report.md
+        else
+          echo "Résumé Valgrind indisponible (voir étapes ci-dessus) ⚠️" >> report.md
+        fi
+        echo "\`\`\`" >> report.md
+        echo "" >> report.md
+        
+        # Footer
+        echo "---" >> report.md
+        echo "*Rapport généré automatiquement par GitHub Actions*" >> report.md
+    
+    - name: 📤 Post report as comment
+      if: always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const report = fs.readFileSync('report.md', 'utf8');
+          
+          github.rest.repos.createCommitComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            commit_sha: context.sha,
+            body: report
+          });
+    
+    - name: 📤 Upload artifacts
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-part1
+        path: |
+          report.md
+          test_player.log
+          test_array.log
+          valgrind_player.log
+          valgrind_array.log
+          compile.log
+    
+    - name: 🏷️ Create validation tag
+      if: steps.test_player.outputs.exit_code == '0' && steps.test_array.outputs.exit_code == '0' && steps.valgrind.outputs.exit_code == '0'
+      run: |
+        git config user.name "GitHub Actions"
+        git config user.email "actions@github.com"
+        git tag -a "submission-part1-validated" -m "Part 1 validated: ${{ github.sha }}"
+        git push origin "submission-part1-validated" || echo "Tag already exists"
+    
+    - name: ✅ Final status
+      if: always()
+      run: |
+        COMPILE="${{ steps.compile.outputs.compile_success }}"
+        SCORE="${{ steps.score.outputs.score }}"
+        
+        echo ""
+        echo "=========================================="
+        echo "   RÉSULTAT FINAL"
+        echo "=========================================="
+        
+        if [ "$COMPILE" != "true" ]; then
+          echo "❌ Échec: Erreurs de compilation"
+          echo "Score: 0/15"
+          exit 1
+        else
+          echo "Score obtenu: ${SCORE}/15"
+          
+          # Convertir le score en entier pour la comparaison
+          SCORE_INT=$(echo "$SCORE" | cut -d. -f1)
+          
+          if [ "$SCORE_INT" -ge 15 ]; then
+            echo "✅ PARFAIT: Score maximum atteint !"
+          elif [ "$SCORE_INT" -ge 10 ]; then
+            echo "✅ VALIDÉ: Bon travail !"
+          elif [ "$SCORE_INT" -ge 5 ]; then
+            echo "⚠️ PARTIEL: Continuez vos efforts"
+          else
+            echo "❌ INSUFFISANT: Consultez le rapport"
+          fi
+          
+          echo ""
+          echo "Consultez le rapport détaillé pour plus d'informations."
+          exit 0
+        fi

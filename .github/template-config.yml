@@ -1,0 +1,73 @@
+# Configuration du template GitHub Classroom
+# Ce fichier permet de spécifier quels fichiers sont cachés aux étudiants
+
+# Fichiers/dossiers à NE PAS copier dans les repos étudiants
+# (restent uniquement dans le template)
+exclude:
+  # Solutions de référence (si vous les créez)
+  - solutions/
+  - solutions/**
+  
+  # Guides enseignant
+  - TEACHER_GUIDE.md
+  
+  # Scripts de correction
+  - grading/
+  - grading/**
+  
+  # Scripts enseignants
+  - verify-template.sh
+  
+  # Système d'évaluation automatique (workflows enseignant)
+  - .github/workflows/grading.yml
+  - .github/workflows/badges.yml
+  
+  # Script de collecte des notes (enseignant uniquement)
+  - collect-grades.py
+  - requirements.txt
+  - GRADING_README.md
+  
+  # Fichiers de configuration avancés
+  - .github/template-config.yml
+  
+  # Fichiers qui perturbent les dépôts étudiants
+  # - Empêche l'affichage du README de .github à la place du README racine
+  - .github/README.md
+  # - Évite les erreurs CODEOWNERS quand l'équipe @cs-efrei/teachers n'existe pas
+  - .github/CODEOWNERS
+
+# Fichiers en lecture seule pour les étudiants
+# (ne peuvent pas être modifiés)
+readonly:
+  # Tests unitaires (pour éviter la triche)
+  - tests/**
+  
+  # Framework de tests
+  - tests/unity/unity.c
+  - tests/unity/unity.h
+  
+  # Workflows de validation (étudiants ne doivent pas modifier)
+  - .github/workflows/validate-part*.yml
+  - .github/workflows/continuous-testing.yml
+
+# Fichiers à fusionner automatiquement lors des mises à jour du template
+auto_merge:
+  # Nouveaux tests (ajoutés progressivement)
+  - tests/part3/**
+  - tests/part4/**
+  - tests/part5/**
+  - tests/part6/**
+  
+  # Nouveaux workflows (ajoutés progressivement)
+  - .github/workflows/validate-part3.yml
+  - .github/workflows/validate-part4.yml
+  - .github/workflows/validate-part5.yml
+  - .github/workflows/validate-part6.yml
+  
+  # Scripts utilitaires (mis à jour automatiquement)
+  - setup.sh
+  - test-local.sh
+  - test-compile.sh
+  - submit.sh
+  - save.sh
+  - sync.sh

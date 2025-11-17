@@ -1,0 +1,63 @@
+name: Continuous Testing (Main Branch)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-main:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 🔧 Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc make valgrind
+    
+    - name: 🔨 Try to compile
+      id: compile
+      continue-on-error: true
+      run: |
+        make clean
+        make 2>&1 | tee compile.log
+        if [ ${PIPESTATUS[0]} -eq 0 ]; then
+          echo "✅ Compilation réussie"
+          echo "success=true" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Erreurs de compilation"
+          echo "success=false" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: 🧪 Test Part 1 (if implemented)
+      if: steps.compile.outputs.success == 'true'
+      continue-on-error: true
+      run: |
+        if make test-part1 2>/dev/null; then
+          echo "✅ Part 1 tests OK"
+        else
+          echo "⚠️ Part 1 tests not ready or failing"
+        fi
+    
+    - name: 📊 Summary
+      if: always()
+      run: |
+        echo "## 🔄 Tests Continus (main)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Auteur:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ steps.compile.outputs.success }}" = "true" ]; then
+          echo "✅ **Compilation:** Réussie" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Compilation:** Échouée" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "💡 **Info:** Ce workflow teste votre code à chaque push sur \`main\`." >> $GITHUB_STEP_SUMMARY
+        echo "Pour soumettre officiellement, utilisez \`./submit.sh <numéro_partie>\`." >> $GITHUB_STEP_SUMMARY
