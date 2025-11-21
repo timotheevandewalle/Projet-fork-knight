@@ -2,6 +2,7 @@
 main
 test_part*
 *.out
+*.exe
 
 # Fichiers objets
 *.o

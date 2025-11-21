@@ -1,0 +1,9 @@
+# Protect student source files from merge conflicts when pulling template updates
+# These files are student sandboxes and should never be overwritten by template updates
+
+# Main sandbox file - students test their code here
+src/main.c merge=ours
+
+# Student implementation files - their work should always be preserved
+src/player.c merge=ours
+src/array-utils.c merge=ours
