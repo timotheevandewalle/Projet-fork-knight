@@ -17,6 +17,12 @@ set(MAIN_SOURCES
     src/player.c
     src/array-utils.c
     src/main.c
+        src/list-utils.c
+        headers/list-utils.h
+        headers/priority-queue.h
+        src/priority-queue.c
+        headers/match.h
+        src/match.c
 )
 
 add_executable(main ${MAIN_SOURCES})

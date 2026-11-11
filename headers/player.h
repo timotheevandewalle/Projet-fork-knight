@@ -6,13 +6,14 @@
 #include <string.h>
 
 typedef struct Player {
-    char username[30];
-    int level;
-    int spicyIndex;
-    int numGames;
-    int numWins;
-    int numLosses;
-    int inQueue;
+
+    char username[30];      // Pseudo du joueur
+    int level;              // Niveau (1-100)
+    int spicyIndex;         // Score de compétence
+    int numGames;           // Total de parties
+    int numWins;            // Victoires
+    int numLosses;          // Défaites
+    int inQueue;            // En file ? (0=non, 1=oui)
 } Player;
 
 // Fonctions de création/destruction
